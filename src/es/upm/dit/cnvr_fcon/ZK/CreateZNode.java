@@ -6,8 +6,8 @@ import java.util.List;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.Watcher;
-import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.ZooDefs.Ids;
+import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 
 public class CreateZNode {
@@ -40,7 +40,7 @@ public class CreateZNode {
 			Stat s = zk.exists(this.name, false); //this);
 			if (s == null) {
 				// Created the znode, if it is not created.
-				response = zk.create(this.name, bytes, 
+				response = zk.create(this.name, bytes,
 						Ids.OPEN_ACL_UNSAFE, mode);
 				//System.out.println(response);
 				isCreated = true;
@@ -64,7 +64,7 @@ public class CreateZNode {
 		try {
 			Stat s = zk.exists(this.name, this.watcher);
 			List<String> list = zk.getChildren(this.name, this.watcher, s);
-		//	printListMembers(list);		
+		//	printListMembers(list);
 			return null;
 
 		} catch (KeeperException e) {
@@ -83,7 +83,7 @@ public class CreateZNode {
 		try {
 			Stat s = zk.exists(this.name, this.watcher);
 			List<String> list = zk.getChildren(this.name, this.watcher, s);
-			printListMembers(list);		
+			printListMembers(list);
 			return list;
 
 		} catch (KeeperException e) {
@@ -100,7 +100,7 @@ public class CreateZNode {
 		System.out.println("Remaining # members:" + list.size());
 		for (Iterator iterator = list.iterator(); iterator.hasNext();) {
 			String string = (String) iterator.next();
-			System.out.print(string + ", ");				
+			System.out.print(string + ", ");
 		}
 		System.out.println();
 	}

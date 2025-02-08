@@ -1,12 +1,6 @@
 package es.upm.dit.cnvr_fcon.FASTAMapReduce;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.security.KeyException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.logging.ConsoleHandler;
@@ -17,11 +11,6 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
-import org.apache.zookeeper.data.Stat;
-
-import es.upm.dit.cnvr_fcon.FASTA_aux.Busqueda;
-import es.upm.dit.cnvr_fcon.FASTA_aux.FASTABuscar;
-import es.upm.dit.cnvr_fcon.FASTA_aux.Resultado;
 
 import es.upm.dit.cnvr_fcon.ZK.CreateSession;
 import es.upm.dit.cnvr_fcon.ZK.CreateZNode;
@@ -59,9 +48,22 @@ public class FASTAProcess implements Watcher{
 	}
 
 	private void create_ZK_Nodes(){
-		//Create Session to zk
 
+		//Create Session to zk
+		CreateSession cs = new CreateSession();
+		zk = cs.createSession();
 		//TODO: Create the zkNodes required and set watchers
+		if (zk != null) {
+			//Create node /members
+			CreateZNode cz = new CreateZNode();
+			cz.createZNode(zk, nodeMember, CreateMode.PERSISTENT);
+			//Create node /comm
+			cz.createZNode(zk, nodeComm, CreateMode.PERSISTENT);
+			//Create node /segments
+			cz.createZNode(zk, nodeSegment, CreateMode.PERSISTENT);
+			//Create node /results
+			cz.createZNode(zk, nodeResult, CreateMode.PERSISTENT);
+		}
 	}
 
 	/**
@@ -81,22 +83,22 @@ public class FASTAProcess implements Watcher{
 	private Watcher  watcherCommMember = new Watcher() {
 		public void process(WatchedEvent event) {
 			// TODO: process for getting and handling segments 
-		}
-	};
-
-
-	// Notified when the number of children in /member is updated
-	private Watcher  watcherAMember = new Watcher() {
-		public void process(WatchedEvent event) {
-			
-			// Can be maintain, although is not needed in this implementation 
+			LOGGER.ingo("WatcherCommMember: " + event.toString());
+			getSegment();
 		}
 	};
 
 	private void getSegment(){
-
 		// TODO: How to get a segment from /comm/member-xx/segment
-		
+		try {
+			List<String> segments = zk.getChildren(nodeSegment, watcherCommMember);
+			if (!segments.isEmpty()) {
+				String segmentPath = nodeSegment + "/" + segments.get(0);
+				processSegment(segmentPath);
+			}
+		} catch (KeyException | InterruptedException e) {
+			LOGGER.severe("Error getting segment: " + e.getMessage());
+		}
 	}
 	
 	@Override
@@ -114,17 +116,28 @@ public class FASTAProcess implements Watcher{
 
 
 	private boolean processSegment(String path) {
-
 		// Get a segment, search the pattern and crea result in the node /comm/member-xx/segment
-		return false;
+		try {
+			byte[] data = zk.getData(path, false, null);
+			String segment = new String(data);
+			LOGGER.info("Segment: " + segment);
 
+			String result = "Processed: " + segment;
+			String resultPath = nodeResult + "/" + path.substring(path.lastIndexOf("/") + 1);
+			zk.create(resultPath, result.getBytes(), null, CreateMode.PERSISTENT);
+			LOGGER.info("Result: " + result);
+			return true;
+		} catch (KeyException | InterruptedException e) {
+			LOGGER.severe("Error processing segment: " + e.getMessage());
+			return false;
+		}
 	}
 
 	private void printListMembers (List<String> list) {
 		System.out.println("Remaining # members:" + list.size());
 		for (Iterator<String> iterator = list.iterator(); iterator.hasNext();) {
 			String string = (String) iterator.next();
-			System.out.print(string + ", ");				
+			System.out.print(string + ", ");
 		}
 		System.out.println();
 	}
@@ -137,7 +150,7 @@ public class FASTAProcess implements Watcher{
 			//			Thread.sleep(60000);
 			Thread.sleep(600000);
 		} catch (Exception e) {
-
+			Logger.severe("Error in main: " + e.getMessage());
 		}
 
 	}

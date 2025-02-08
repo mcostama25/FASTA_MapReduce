@@ -2,7 +2,6 @@ package es.upm.dit.cnvr_fcon.FASTA_aux;
 
 import java.util.ArrayList;
 
-
 import es.upm.dit.cnvr_fcon.FASTA_interface.LectorFASTAInterface;
 
 /**
@@ -74,7 +73,7 @@ public class FASTABuscar implements LectorFASTAInterface {
     	for(int i = 0; i < patron.length; i++) {
     		//if(patron[i] != contenido[posicionAComparar + i] && Character.toUpperCase(patron[i]) != 'N' && Character.toUpperCase(contenido[posicionAComparar + i]) != 'N') {
     	    if(patron[i] != contenido[posicionAComparar + i] && Character.toUpperCase(patron[i]) != 'N') {//&& Character.toUpperCase(contenido[posicionAComparar + i]) != 'N') {
-    	  		    			return false;
+                return false;
     		}
     	}
     	return true;

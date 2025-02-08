@@ -3,11 +3,11 @@
 package es.upm.dit.cnvr_fcon.FASTA_aux;
 
 import java.io.FileInputStream;
-import java.io.Serializable;
-
 import java.io.FileOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.Serializable;
+
 import es.upm.dit.cnvr_fcon.FASTA_interface.BusquedaInterface;
 
 /**
@@ -140,7 +140,7 @@ public class Busqueda implements BusquedaInterface, Serializable{
 			ex.printStackTrace();
 			//LOGGER.severe("Unexpected file");
 			return false;
-		}		
+		}
 	}
 	
 }
