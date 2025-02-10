@@ -42,8 +42,7 @@ public class FASTAProcess implements Watcher{
 	private String nodeASegment = "/segment-";
 	private String nodeResult   = "/results";
 	// private String nodeAResult  = "/result-";
-	private ZooKeeper zk        = null;
-
+	private ZooKeeper zk = null;
 
 	
 	static {
@@ -67,11 +66,16 @@ public class FASTAProcess implements Watcher{
 		ZooKeeper zk = cs.ConnectSession(hosts);
 		//TODO: Create the zkNodes required and set watchers
 		if (zk != null) {
-			//Create node /members
-			CreateZNode zMember = new CreateZNode(zk, nodeMember, new byte[0], CreateMode.EPHEMERAL_SEQUENTIAL);
-			//Create node /comm
-			CreateZNode zComm = new CreateZNode(zk, nodeComm, new byte[0], CreateMode.PERSISTENT);
-			watcherCommMember(nodeComm); // levantamos un wacther para el path /Comm
+			try {
+				//Create node /members
+				zk.create(nodeMember,null , null, CreateMode.PERSISTENT);
+				zk.create(nodeMember + nodeAMember, null, null, CreateMode.EPHEMERAL_SEQUENTIAL);
+				zk.create(nodeComm, null, null, CreateMode.PERSISTENT);
+				String CommMemberPath = zk.create(nodeComm + nodeAMember, null, null, CreateMode.EPHEMERAL_SEQUENTIAL);
+				watcherCommMember(CommMemberPath); // levantamos un wacther para el path /Comm/Member-xx	
+			}catch (KeeperException | InterruptedException e) {
+				LOGGER.severe("[!] Error creating zNodes: " + e.getMessage());
+			}		
 		}
 	}
 
@@ -96,7 +100,14 @@ public class FASTAProcess implements Watcher{
 					// TODO: process for getting and handling segments 
 					if (event.getType() == Event.EventType.NodeCreated) {
 						LOGGER.info("Nuevo nodo en:" + path);
-						getSegment(); // cuando se crea un nuevo nodo se lanza la fuincion getSegment().
+						try {
+							List<String> child = zk.getChildren(path, false);
+							if ( child.get(0) == "segment") {
+								processSegment(path); // cuando el hijo creado es un /segment, se llama a la funcion processSegment(/comm/member-xx);
+							}
+						}catch (KeeperException | InterruptedException e) {
+							LOGGER.severe("Error geting /comm/member-x children: " + e.getMessage());
+						}	
 					} else if (event.getType() == Event.EventType.NodeDeleted) {
 						LOGGER.info("Nodo eliminado: " + path);
 					}
@@ -109,19 +120,7 @@ public class FASTAProcess implements Watcher{
 	};
 
 	private void getSegment(){
-		// TODO: How to get a segment from /comm/member-xx/segment
-		try {
-			List<String> members = zk.getChildren(nodeComm, false); // get the children of node Comm (get the members)
-			if (!members.isEmpty()) { 
-				for (String member : members) { // for each member, get the children (get the segment)
-					List<String> segment = zk.getChildren(member, false); // children of the member x
-					String segmentPath = nodeComm + "/" + member; //este path es /comm/member-xx el nodo segmento se añade luego.
-					processSegment(segmentPath);
-				}	
-			}
-		} catch (KeeperException | InterruptedException e) {
-			LOGGER.severe("Error getting segment: " + e.getMessage());
-		}
+		// TODO: How to get a segment from /comm/member-xx/segment	
 	}
 	
 	@Override
@@ -137,8 +136,8 @@ public class FASTAProcess implements Watcher{
 	}
 
 	private boolean processSegment(String path) {
-		// Get a segment, search the pattern and crea result in the node /comm/member-xx/segment
-		String segmentPath = path + "/segment"; // el path era /comm/member-xx ahor ale añadimos el nodo segment.
+		// Get a segment, search the pattern and create a result in the node /comm/member-xx/segment
+		String segmentPath = path + "/segment"; // el path era /comm/member-xx ahora le añadimos el nodo /segment.
 		try {
 			Stat s = zk.exists(segmentPath, false);
 			byte[] data = zk.getData(segmentPath, false, s);

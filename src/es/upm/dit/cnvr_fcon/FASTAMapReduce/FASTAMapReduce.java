@@ -110,14 +110,12 @@ public class FASTAMapReduce implements Watcher{
 		//TODO: Create the zkNodes required and set watchers
 		if (zk != null) {
 			//Create node /members
-			CreateMode mode = CreateMode.PERSISTENT;
-			CreateZNode zMember = new CreateZNode(zk, nodeMember, new byte[0], mode);
-			//Create node /comm
-			CreateZNode zComm = new CreateZNode(zk, nodeComm, new byte[0], mode);
-			//Create node /segments
-			// CreateZNode zSegment = new CreateZNode(zk, nodeSegment, new byte[0], mode);
-			//Create node /results
-			// CreateZNode zResult = new CreateZNode(zk, nodeResult, new byte[0], mode);
+			try {
+				zk.create(nodeMember,null , null, CreateMode.PERSISTENT);
+				zk.create(nodeComm, null, null, CreateMode.PERSISTENT);
+			} catch (KeeperException | InterruptedException e) {
+				LOGGER.severe("Error creating zNodes:" + e.getMessage());
+			}
 		}
 	}
 
