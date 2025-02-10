@@ -9,6 +9,8 @@ import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
@@ -42,7 +44,7 @@ public class FASTAMapReduce implements Watcher{
 	private static String nodeMember = "/members";
 	private String nodeComm     = "/comm";
 	private String nodeSegment  = "/segment";
-	//private String nodeResult  = "/results";
+	private String nodeResult  = "/results";
 	private ZooKeeper zk = null;
 
 	//Create required objetos for handling processes, segments and results
@@ -102,19 +104,20 @@ public class FASTAMapReduce implements Watcher{
 	// Crear y configurar los zkNodes y crear una sesión con un ensemble 
 	private void create_ZK_Nodes(){
 		//Create Session to zk
+		String[] hosts = {"127.0.0.1:2181", "127.0.0.1:2181", "127.0.0.1:2181"};
 		CreateSession cs = new CreateSession();
-		zk = cs.createSession();
+		ZooKeeper zk = cs.ConnectSession(hosts);
 		//TODO: Create the zkNodes required and set watchers
 		if (zk != null) {
 			//Create node /members
-			CreateZNode cz = new CreateZNode();
-			cz.createZNode(zk, nodeMember, CreateMode.PERSISTENT);
+			CreateMode mode = CreateMode.PERSISTENT;
+			CreateZNode zMember = new CreateZNode(zk, nodeMember, new byte[0], mode);
 			//Create node /comm
-			cz.createZNode(zk, nodeComm, CreateMode.PERSISTENT);
+			CreateZNode zComm = new CreateZNode(zk, nodeComm, new byte[0], mode);
 			//Create node /segments
-			cz.createZNode(zk, nodeSegment, CreateMode.PERSISTENT);
+			// CreateZNode zSegment = new CreateZNode(zk, nodeSegment, new byte[0], mode);
 			//Create node /results
-			cz.createZNode(zk, nodeResult, CreateMode.PERSISTENT);
+			// CreateZNode zResult = new CreateZNode(zk, nodeResult, new byte[0], mode);
 		}
 	}
 
@@ -139,7 +142,7 @@ public class FASTAMapReduce implements Watcher{
 	private Watcher  watcherCommMember = new Watcher() {
 		public void process(WatchedEvent event) {
 			// TODO: process for getting and handling results 
-			LOGGER.info("Watcger CommMember: " + event.toString());
+			LOGGER.info("Watcher CommMember: " + event.toString());
 			updateMembers();
 		}
 	};
@@ -147,14 +150,6 @@ public class FASTAMapReduce implements Watcher{
 	// Obtiene un resultado de /comm/memberx y procesa.
 	private boolean getResult(String pathResult, String member){
 			//TODO: This implementation
-		try {
-			byte[] data = zk.getData(pathResult, false, null);
-			LOGGER.info("Procesand resulatado desde: " + member);
-			return true;
-		} catch (KeyException | InterruptedException e) {
-			LOGGER.severe("Error getting result: " + e.getMessage());
-			return false;
-		}
 			// Get and process a result
 			
 			// Print the positions find, when all results are provided
@@ -162,12 +157,13 @@ public class FASTAMapReduce implements Watcher{
 
 			// Supose that res is a list after reduced when all results are provided
 			// and stored in res
-			
-/*				LOGGER.info("Subgenomas donde se ha encontrado el patrón: " + this.patron);
-				for (Long pos : res){
-					System.out.println("Encontrado " + / " en " + pos);
-				}
-*/
+			/*
+			LOGGER.info("Subgenomas donde se ha encontrado el patrón: " + this.patron);
+			for (Long pos : res){
+				System.out.println("Encontrado en la posición: " + pos);
+			}
+			*/
+		return false;
 	}
 
 	/**
@@ -201,11 +197,12 @@ public class FASTAMapReduce implements Watcher{
 	private void updateMembers () {
 		//TODO: to  be created
 		try {
-			List<String> members = zk.getChildren(nodeMember, watcherMembers);
+			List<String> members;
+			members = zk.getChildren(nodeMember, watcherMembers);
 			for (String member : members) {
 				assignSegment(member);
 			}
-		} catch (KeyException | InterruptedException e) {
+		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("Error updating members: " + e.getMessage());
 		}
 	}
@@ -219,7 +216,7 @@ public class FASTAMapReduce implements Watcher{
 			String pathSegment = nodeSegment + "/" + member;
 			zk.create(pathSegment, subGenoma, null, CreateMode.PERSISTENT);
 			LOGGER.info("Segmento asignado a: " + member);
-		} catch (KeyException | InterruptedException e) {
+		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("Error assigning segment: " + e.getMessage());
 		}
 	}
@@ -272,7 +269,7 @@ public class FASTAMapReduce implements Watcher{
 		try {
 			Thread.sleep(600000);
 		} catch (Exception e) {
-			LOGGER.serve("Main thread interrupted: " + e.getMessage());
+			LOGGER.severe("Main thread interrupted: " + e.getMessage());
 		}
 
 	}
