@@ -69,15 +69,13 @@ public class FASTAProcess implements Watcher{
 				//Create node /members
 				zk.create(nodeMember,null , null, CreateMode.PERSISTENT);
 				String MemberID = zk.create(nodeMember + nodeAMember, null, null, CreateMode.EPHEMERAL_SEQUENTIAL); // guardamos el path del member creado "/members/member-xx"
-				MemberID = MemberID.substring(path.lastIndexOf("/") + 1); // guardamos el ID del member "member-xx"
+				MemberID = MemberID.substring(MemberID.lastIndexOf("/") + 1); // guardamos el ID del member "member-xx"
 
 				zk.create(nodeComm, null, null, CreateMode.PERSISTENT);
 				CommMemberPath = nodeComm + "/" + MemberID; // guardamos el path del nodo "/comm/member-xx"
 				zk.create(CommMemberPath, null, null, CreateMode.PERSISTENT); // creamos el nodo "/comm/member-xx" usando el MemberID generado anteriormente.
 				LOGGER.info("[+] Created zNodes: " + nodeMember + " " + nodeComm);
 				
-				zk.getChildren(CommMemberPath, watcherCommMember); // se activa el watcher para el nodo "/comm/member-xx"
-
 			}catch (KeeperException | InterruptedException e) {
 				LOGGER.severe("[!] Error creating zNodes: " + e.getMessage());
 			}
@@ -103,17 +101,17 @@ public class FASTAProcess implements Watcher{
 			try {
 				// TODO: process for getting and handling segments 
 				if (event.getType() == Event.EventType.NodeCreated) {
-					LOGGER.info("Nuevo nodo en:" + path);
+					LOGGER.info("Nuevo nodo en:" + CommMemberPath);
 					try {
 						List<String> child = zk.getChildren(CommMemberPath, false);
 						if ( child.get(0) == "segment") {
-							processSegment(path); // cuando el hijo creado es un /segment, se llama a la funcion processSegment(/comm/member-xx);
+							processSegment(CommMemberPath); // cuando el hijo creado es un /segment, se llama a la funcion processSegment(/comm/member-xx);
 						}
 					}catch (KeeperException | InterruptedException e) {
 						LOGGER.severe("Error geting /comm/member-x children: " + e.getMessage());
 					}	
 				} else if (event.getType() == Event.EventType.NodeDeleted) {
-					LOGGER.info("Nodo eliminado: " + path);
+					LOGGER.info("Nodo eliminado: " + CommMemberPath);
 				}
 				zk.getChildren(CommMemberPath, watcherCommMember); // volvemos a activar el Watcher.
 			
@@ -125,7 +123,12 @@ public class FASTAProcess implements Watcher{
 
 	private void getSegment(){
 		// TODO: How to get a segment from /comm/member-xx/segment	ACTIVAR EL WACTHER
-		}
+		try {
+			zk.getChildren(CommMemberPath, watcherCommMember);
+		} catch (KeeperException | InterruptedException e) {
+			LOGGER.severe("Errir al activar el watcher:" + e.getMessage());
+		} // se activa el watcher para el nodo "/comm/member-xx"
+	}
 	
 	@Override
 	public void process(WatchedEvent event) {
