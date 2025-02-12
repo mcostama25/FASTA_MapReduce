@@ -7,6 +7,7 @@ import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Random;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -23,7 +24,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import es.upm.dit.cnvr_fcon.FASTA_aux.Busqueda;
 import es.upm.dit.cnvr_fcon.FASTA_aux.FASTABuscar;
-import es.upm.dit.cnvr_fcon.ZK.CreateSession;
 
 /**
  * @author mmiguel, aalonso
@@ -41,7 +41,8 @@ public class FASTAProcess implements Watcher{
 	private String nodeResult   = "/results";
 	// private String nodeAResult  = "/result-";
 	private ZooKeeper zk = null;
-
+	String[] hosts = {"127.0.0.1:2181", "127.0.0.1:2181", "127.0.0.1:2181"};
+	
 	private String CommMemberPath = null; // definimos una variable donde guardaremos el path en el que se encuentra el nodo "/comm/member-xx"
 
 	static {
@@ -55,18 +56,34 @@ public class FASTAProcess implements Watcher{
 	public FASTAProcess () {
 		configurarLogger();
 		create_ZK_Nodes();
-		// getSegment();
+		getSegment();
 	}
 
 	private void create_ZK_Nodes(){
 		//Create Session to zk
-		String[] hosts = {"127.0.0.1:2181", "127.0.0.1:2181", "127.0.0.1:2181"};
-		CreateSession cs = new CreateSession();
-		ZooKeeper zk = cs.ConnectSession(hosts);
+		Random rand = new Random();
+		int i = rand.nextInt(hosts.length);
+		
+		try {
+			if (zk == null) {
+				zk = new ZooKeeper(hosts[i], SESSION_TIMEOUT, this); // creamos una session de zookeeper conectando a uno de los hosts.
+				try {
+					lock.lock();
+					System.out.println("Cerrado el cerrojo para crear la sesión");
+				} catch (Exception e) {
+					LOGGER.severe("[!] Error al cerrar el cerrojo: " + e.getMessage());
+				}
+			}  catch (Exception e) {
+				LOGGER.severe("[!] Error creating session: " + e.getMessage());
+			}
+		} catch (Exception e) {
+			LOGGER.severe("[!] Error creating session: " + e.getMessage());
+		}
+		
 		//TODO: Create the zkNodes required and set watchers
+		//Create node /members
 		if (zk != null) {
 			try {
-				//Create node /members
 				zk.create(nodeMember,null , null, CreateMode.PERSISTENT);
 				String MemberID = zk.create(nodeMember + nodeAMember, null, null, CreateMode.EPHEMERAL_SEQUENTIAL); // guardamos el path del member creado "/members/member-xx"
 				MemberID = MemberID.substring(MemberID.lastIndexOf("/") + 1); // guardamos el ID del member "member-xx"
@@ -108,7 +125,7 @@ public class FASTAProcess implements Watcher{
 							processSegment(CommMemberPath); // cuando el hijo creado es un /segment, se llama a la funcion processSegment(/comm/member-xx);
 						}
 					}catch (KeeperException | InterruptedException e) {
-						LOGGER.severe("Error geting /comm/member-x children: " + e.getMessage());
+						LOGGER.severe("[!] Error geting /comm/member-x children: " + e.getMessage());
 					}	
 				} else if (event.getType() == Event.EventType.NodeDeleted) {
 					LOGGER.info("Nodo eliminado: " + CommMemberPath);
@@ -116,7 +133,7 @@ public class FASTAProcess implements Watcher{
 				zk.getChildren(CommMemberPath, watcherCommMember); // volvemos a activar el Watcher.
 			
 			} catch (Exception e) {
-				LOGGER.severe("Error seting node creation watcher: " + e.getMessage());
+				LOGGER.severe("[!] Error processing node creation watcher: " + e.getMessage());
 			}
 		}
 	};
@@ -126,7 +143,7 @@ public class FASTAProcess implements Watcher{
 		try {
 			zk.getChildren(CommMemberPath, watcherCommMember);
 		} catch (KeeperException | InterruptedException e) {
-			LOGGER.severe("Errir al activar el watcher:" + e.getMessage());
+			LOGGER.severe("[!] Error al activar el watcher:" + e.getMessage());
 		} // se activa el watcher para el nodo "/comm/member-xx"
 	}
 	
@@ -187,14 +204,13 @@ public class FASTAProcess implements Watcher{
 		System.out.println();
 	}
 
-
 	public static void main(String[] args) {
 		FASTAProcess procesar = new FASTAProcess();
 		try {
 			//			Thread.sleep(60000);
 			Thread.sleep(600000);
 		} catch (Exception e) {
-			LOGGER.severe("Error in main: " + e.getMessage());
+			LOGGER.severe("[!!] in main: " + e.getMessage());
 		}
 
 	}
