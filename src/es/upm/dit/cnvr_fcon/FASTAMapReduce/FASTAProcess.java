@@ -114,7 +114,7 @@ public class FASTAProcess implements Watcher{
 	// Notified when the number of children in /comm/memberxx is updated
 	private Watcher  watcherCommMember = new Watcher() { // este wacher se levanta al crearse el nodo /comm y va estar monitorizando la cracion y destruccion de hijos.
 		public void process(WatchedEvent event) {
-			System.out.println("------------------Watcher Member------------------\n");
+			System.out.println("------------------Watcher ComMember------------------\n");
 			try {
 				// TODO: process for getting and handling segments 
 				if (event.getType() == Event.EventType.NodeCreated) {
@@ -207,7 +207,7 @@ public class FASTAProcess implements Watcher{
 	public static void main(String[] args) {
 		FASTAProcess procesar = new FASTAProcess();
 		try {
-			//			Thread.sleep(60000);
+			// Thread.sleep(60000);
 			Thread.sleep(600000);
 		} catch (Exception e) {
 			LOGGER.severe("[!!] in main: " + e.getMessage());
