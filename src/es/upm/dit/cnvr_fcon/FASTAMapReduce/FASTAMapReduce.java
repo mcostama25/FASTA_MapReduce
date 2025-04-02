@@ -117,10 +117,10 @@ public class FASTAMapReduce implements Watcher{
 					LOGGER.severe("[!] Error al cerrar el cerrojo: " + e.getMessage());
 				}
 			}  catch (Exception e) {
-				LOGGER.severe("[!] Error creating session: " + e.getMessage());
+				LOGGER.severe("[!] Error al crear la sessión: " + e.getMessage());
 			}
 		} catch (Exception e) {
-			LOGGER.severe("[!] Error creating session: " + e.getMessage());
+			LOGGER.severe("[!] Error al crear la sessión: " + e.getMessage());
 		}
 		
 		//TODO: Create the zkNodes required and set watchers
@@ -232,7 +232,9 @@ public class FASTAMapReduce implements Watcher{
 		ArrayList<Long> lista = null;
 
 		// TODO: Process a result
-
+		for (Long pos : resultado.getPosiciones()) {
+			lista.add(pos + resultado.getIndice());
+		}
 		// Devuelve null si no se han recibido todos los resultados
 		return lista;
 	}
@@ -272,11 +274,13 @@ public class FASTAMapReduce implements Watcher{
 	private void updateMembers () { //Activamos watchers
 		//TODO: to  be created
 		try {
-			List<String> members;
-			members = zk.getChildren(nodeMember, watcherMembers); // activamos el watcher de /members
+			List<String> members = zk.getChildren(nodeMember, watcherMembers); // activamos el watcher de /members
 			printListMembers(members);
-
-			List<String> CommMembers = zk.getChildren(CommMemberPath, watcherCommMember); // activamos el watcher de /comm/member-xx
+			
+			for (String member : members) {
+				String commmemberPath = nodeComm + "/" + member; // creamos la variable commemberPath
+				zk.getChildren(CommMemberPath, watcherCommMember); // activamos el watcher de /comm/member-xx
+			}
 		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("[!] Error updating members: " + e.getMessage());
 		}

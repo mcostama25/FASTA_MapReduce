@@ -104,8 +104,7 @@ public class FASTAProcess implements Watcher{
 	 */
 	private void configurarLogger() {
 		//Configurar un handler
-		ConsoleHandler handler;
-		handler = new ConsoleHandler(); 
+		ConsoleHandler handler = new ConsoleHandler(); 
 		handler.setLevel(Level.FINEST); 
 		LOGGER.addHandler(handler); 
 		LOGGER.setLevel(Level.FINEST);
@@ -121,7 +120,7 @@ public class FASTAProcess implements Watcher{
 					LOGGER.info("Nuevo nodo en:" + CommMemberPath);
 					try {
 						List<String> child = zk.getChildren(CommMemberPath, false);
-						if ( child.get(0) == "segment") {
+						if ( child.get(0).equals("segment")) {
 							processSegment(CommMemberPath); // cuando el hijo creado es un /segment, se llama a la funcion processSegment(/comm/member-xx);
 						}
 					}catch (KeeperException | InterruptedException e) {
