@@ -1,10 +1,14 @@
 package es.upm.dit.cnvr_fcon.FASTAMapReduce;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+
 //import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
@@ -27,6 +31,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import es.upm.dit.cnvr_fcon.FASTA_aux.Busqueda;
 import es.upm.dit.cnvr_fcon.FASTA_aux.FASTABuscar;
+import es.upm.dit.cnvr_fcon.FASTA_aux.Resultado;
+
 
 /**
  * @author mmiguel, aalonso
@@ -124,12 +130,14 @@ public class FASTAProcess implements Watcher{
 		public void process(WatchedEvent event) {
 			System.out.println("------------------Watcher ComMember------------------\n");
 			try {
-				// TODO: process for getting and handling segments 
-				if (event.getType() == Event.EventType.NodeCreated) {
+				// TODO: process for getting and handling segments
+				Event.EventType eventType = event.getType();
+				if (eventType == Event.EventType.NodeChildrenChanged) {
 					LOGGER.info("Nuevo nodo en:" + CommMemberPath);
 					try {
-						List<String> child = zk.getChildren(CommMemberPath, false);
-						if ( child.get(0).equals("segment")) {
+						List<String> children = zk.getChildren(CommMemberPath, false);
+						Collections.sort(children);
+						if ( children.get(children.size() - 1).equals("segment")) {
 							processSegment(CommMemberPath); // cuando el hijo creado es un /segment, se llama a la funcion processSegment(/comm/member-xx);
 						}
 					}catch (KeeperException | InterruptedException e) {
@@ -172,28 +180,45 @@ public class FASTAProcess implements Watcher{
 		String segmentPath = path + "/segment"; // el path era /comm/member-xx ahora le añadimos el nodo /segment.
 		try {
 			Stat s = zk.exists(segmentPath, false);
-			byte[] data = zk.getData(segmentPath, false, s);
-			ObjectMapper objectMapper = new ObjectMapper();
-			Busqueda busqueda = objectMapper.readValue(data, Busqueda.class); // construir el objeto busqueda.
+			byte[] bytes = zk.getData(segmentPath, false, s);
 			
+			LOGGER.info("[+] Se han obtenido los datos del segmento");
+			// desreializamos el objeto busqueda del nodo /comm/member-xx/segment para su procesado
+			ByteArrayInputStream in = new ByteArrayInputStream(bytes);
+			ObjectInputStream is = new ObjectInputStream(in);
+			Busqueda busqueda = (Busqueda) is.readObject();
+			
+			// una vez reconstuido el objeto busqueda, usamos sus metodos para su procesado:
+			//recuperamos el indice
 			int segmentIndex = busqueda.getIndice();
 			LOGGER.info("[+] Segment: " + segmentIndex); // devolvemos por pantalla el indice del segmento.
+			// recuperamos el patron
+			byte[] patron = busqueda.getPatron();
+			LOGGER.info("[+] Patron: "+ patron);
+			// recuperamos el subgenoma
+			byte[] subGenoma = busqueda.getGenoma();
+			LOGGER.info("[+] Se ha obtenido el subGenoma");
 			
+			// con los elementos recuperados, llamamos al metodo buscar de FASTABuscar para encontrar los patrones dentor el subgenoma:
+			// construimos la clase FASTABuscar con busqueda.
 			FASTABuscar buscar = new FASTABuscar(busqueda); // se crea un objeto FASTABuscar
-			ArrayList<Long> result = buscar.buscar(busqueda.getPatron()); // se llama al metodo buscar (devuelve el resultado con el ïndice del segmento y las posiciones)
-			
+			ArrayList<Long> rawresult = buscar.buscar(patron); // se llama al metodo buscar (devuelve el resultado con el ïndice del segmento y las posiciones)
+			// construimos la clase Resultado qeu contiene la lista de posicione sy el indice del subGenoma
+			Resultado result = new Resultado(rawresult, segmentIndex);
+			//ahora serializamos el resultado para colgarlo en el nodo /comm/member-xx/result
 			ByteArrayOutputStream bos = new ByteArrayOutputStream();
 			ObjectOutputStream oos = new ObjectOutputStream(bos);
 			oos.writeObject(result);
 			oos.flush();
 			byte[] bResult = bos.toByteArray();
 			
-			zk.delete(path, -1); // se elimina el nodo /comm/member-xx/segment
-			
-			String resultPath = path.substring(0, path.lastIndexOf("/")) + "/result"; // construimos el path a partir de /comm/member-xx añadiendo el nodo /result
-			zk.create(resultPath, bResult, null, CreateMode.PERSISTENT); // creamos el nodo path+/reuslt con los datos (byte[]) del resultado
-			LOGGER.info("[+] Resultado: " + result);
+			//finalmente colgamos el objeto Result serializado al nodo /comm/member/result
+			zk.delete(segmentPath, -1); // se elimina el nodo /comm/member-xx/segment
+			String resultPath = path + "/result"; // construimos el path a partir de /comm/member-xx añadiendo el nodo /result
+			zk.create(resultPath, bResult, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT); // creamos el nodo path+/reuslt con los datos (byte[]) del resultado
+			LOGGER.info("[+] Resultado obtenido y colgado!: " + result);
 			return true;
+			
 		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("[!] Error processing segment: " + e.getMessage());
 			return false;
@@ -201,7 +226,11 @@ public class FASTAProcess implements Watcher{
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 			return false;
+		} catch (ClassNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
+		return false;
 	}
 
 	private void printListMembers (List<String> list) {
@@ -214,6 +243,8 @@ public class FASTAProcess implements Watcher{
 	}
 
 	public static void main(String[] args) {
+		Logger.getLogger("org.apache.zookeeper").setLevel(Level.INFO);
+
 		FASTAProcess procesar = new FASTAProcess();
 		try {
 			// Thread.sleep(60000);
