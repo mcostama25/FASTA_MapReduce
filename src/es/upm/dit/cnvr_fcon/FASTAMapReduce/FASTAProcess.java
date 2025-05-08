@@ -197,7 +197,7 @@ public class FASTAProcess implements Watcher{
 			LOGGER.info("[+] Patron: "+ patron);
 			// recuperamos el subgenoma
 			byte[] subGenoma = busqueda.getGenoma();
-			LOGGER.info("[+] Se ha obtenido el subGenoma");
+			LOGGER.info("[+] Se ha obtenido el subGenoma: " + subGenoma);
 			
 			// con los elementos recuperados, llamamos al metodo buscar de FASTABuscar para encontrar los patrones dentor el subgenoma:
 			// construimos la clase FASTABuscar con busqueda.

@@ -60,7 +60,9 @@ public class FASTAMapReduce implements Watcher {
 	private ZooKeeper zk = null;
 	private static final int SESSION_TIMEOUT = 5000;
 	private Lock lock = new ReentrantLock();
-
+	
+	ArrayList<Long> Resultat_Final = null;
+	
 	String[] hosts = { "127.0.0.1:2181", "127.0.0.1:2181", "127.0.0.1:2181" };
 	private String CommMemberPath = null; // definimos una variable donde guardaremos el path en el que se encuentra el
 											// nodo "/comm/member-xx"
@@ -217,7 +219,6 @@ public class FASTAMapReduce implements Watcher {
 	private boolean getResult(String pathResult, String member) { //
 		// TODO: This implementation
 		// Get and process a result
-
 		try {
 			// obtenemos el reusltado serializado dell nodo /comm/member-xx/result y lo deserializamos
 			Stat s = zk.exists(pathResult, false);
@@ -227,15 +228,18 @@ public class FASTAMapReduce implements Watcher {
 			ByteArrayInputStream in = new ByteArrayInputStream(data);
 			ObjectInputStream is = new ObjectInputStream(in);
 			Resultado result = (Resultado)is.readObject();
-			LOGGER.info("Resultado deserializado obtenido");
+			LOGGER.info("Resultado deserializado obtenido: "+ result.getIndice());
 			
-			ArrayList<Long> res = processResult(result); // procesamos el resultado
 			processedSegments++; // incrementamos el número de segmentos procesados
-
-			LOGGER.info("[+] Resultado obtenido de: " + pathResult + ": " + res.size()); // Printamos el resultado
-																							// obtenido.
-			LOGGER.info("[+] Resultados obtenidos: " + res);
-
+			processResult(result); // procesamos el resultado parcial para obtener el reusltado final.
+			
+			// eliminamos el nodo result y asignamos un nuevo segmento si todavia qudean por procesar
+			zk.delete(pathResult, -1); // se elimina el nodo /comm/member-xx/resutl			
+			if (processedSegments < numFragmentos) {
+				LOGGER.info("[+] Se asigna un nuevo segmento al miembro:" + member);
+				assignSegment(member);
+			}
+			
 		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("[!] Error getting result: " + e.getMessage());
 		} catch (IOException e) {
@@ -257,15 +261,18 @@ public class FASTAMapReduce implements Watcher {
 	 * @return La lista actualizada
 	 */
 	private ArrayList<Long> processResult(Resultado resultado) {
-		
-		ArrayList<Long> lista = null;
-
 		// TODO: Process a result
 		for (Long pos : resultado.getLista()) {
-			lista.add(pos + resultado.getIndice());
+			Resultat_Final.add(pos + resultado.getIndice());
 		}
 		// Devuelve null si no se han recibido todos los resultados
-		return lista;
+		if (processedSegments < numFragmentos) {
+			LOGGER.info("[+] Se ha obtenido el resultado final: " + Resultat_Final);
+			return Resultat_Final; // cuando se hayan procesado todos los segmentos, devolvemos el resultado final
+		} else {
+			LOGGER.info("[+] Se ja añadido un nuevo resultado aprcial a la lista:" + resultado.getIndice());
+			return null; // hasta entonces, devolvemos null
+		}
 	}
 
 	// Se recibe una notificación cuando cambia el número de hijos de /member
@@ -295,7 +302,7 @@ public class FASTAMapReduce implements Watcher {
 					// /comm y recupera rel reusltado si lo hay
 					// POR HACER
 				} else {
-					LOGGER.info("____No se ha detectado al cracioin ni eliminacion de Nodo MEMBERS______");
+					LOGGER.info("____No se ha detectado al cración ni eliminación de Nodo MEMBERS______");
 				}
 				zk.getChildren(nodeMember, watcherMembers); // volvemos a activar el Watcher.
 
