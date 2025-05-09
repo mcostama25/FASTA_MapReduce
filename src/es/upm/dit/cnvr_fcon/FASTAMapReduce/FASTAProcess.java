@@ -133,12 +133,13 @@ public class FASTAProcess implements Watcher{
 				// TODO: process for getting and handling segments
 				Event.EventType eventType = event.getType();
 				if (eventType == Event.EventType.NodeChildrenChanged) {
-					LOGGER.info("Nuevo nodo en:" + CommMemberPath);
+					LOGGER.info("[+] :" + CommMemberPath);
 					try {
 						List<String> children = zk.getChildren(CommMemberPath, false);
-						Collections.sort(children);
-						if ( children.get(children.size() - 1).equals("segment")) {
-							processSegment(CommMemberPath); // cuando el hijo creado es un /segment, se llama a la funcion processSegment(/comm/member-xx);
+						if (children.get(0).equals("segment")) {
+					        processSegment(CommMemberPath);
+						} else {
+						    LOGGER.info("No hi ha cap fill a " + CommMemberPath);
 						}
 					}catch (KeeperException | InterruptedException e) {
 						LOGGER.severe("[!] Error geting /comm/member-x children: " + e.getMessage());
@@ -216,7 +217,7 @@ public class FASTAProcess implements Watcher{
 			zk.delete(segmentPath, -1); // se elimina el nodo /comm/member-xx/segment
 			String resultPath = path + "/result"; // construimos el path a partir de /comm/member-xx añadiendo el nodo /result
 			zk.create(resultPath, bResult, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT); // creamos el nodo path+/reuslt con los datos (byte[]) del resultado
-			LOGGER.info("[+] Resultado obtenido y colgado!: " + result);
+			LOGGER.info("[+] Resultado obtenido y colgado!: " + resultPath + ": " + result);
 			return true;
 			
 		} catch (KeeperException | InterruptedException e) {

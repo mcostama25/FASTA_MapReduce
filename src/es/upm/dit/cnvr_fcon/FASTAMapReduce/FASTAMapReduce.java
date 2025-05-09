@@ -58,7 +58,7 @@ public class FASTAMapReduce implements Watcher {
 	private static final int SESSION_TIMEOUT = 5000;
 	private Lock lock = new ReentrantLock();
 	
-	ArrayList<Long> Resultat_Final = null;
+	ArrayList<Long> Resultat_Final;
 	
 	String[] hosts = { "127.0.0.1:2181", "127.0.0.1:2181", "127.0.0.1:2181" };
 	private String CommMemberPath = null; // definimos una variable donde guardaremos el path en el que se encuentra el
@@ -186,10 +186,11 @@ public class FASTAMapReduce implements Watcher {
 				Event.EventType eventType = event.getType();
 				if (eventType == Event.EventType.NodeChildrenChanged)  {
 					LOGGER.info("[+] Nuevo nodo en:" + CommMemberPath);
+					memberID = CommMemberPath.substring(CommMemberPath.lastIndexOf("/") + 1); //guardamos el nobre del miemrbo en cuestion
 					try {
-						List<String> child = zk.getChildren(CommMemberPath, false);
-						if (child.get(child.size()-1).equals("result")) {
-							LOGGER.info("[+] Iniciando procesado resultado..."+ memberID);
+						List<String> children = zk.getChildren(CommMemberPath, false);
+						if (children.get(0).equals("result")) {
+							LOGGER.info("[+] Iniciando procesado del resultado de..."+ memberID);
 							getResult(CommMemberPath + nodeResult, memberID); // cuando el hijo creado es un /result hay que procesar el resultado.													
 						}
 						
@@ -226,11 +227,13 @@ public class FASTAMapReduce implements Watcher {
 			LOGGER.info("[+] Resultado obtenido: "+ result.getIndice());
 			
 			processedSegments++; // incrementamos el número de segmentos procesados
+			LOGGER.info("[+] Numero de segmentos procesados:" + processedSegments);
 			processResult(result); // procesamos el resultado parcial para obtener el reusltado final.
 			
 			// eliminamos el nodo result y asignamos un nuevo segmento si todavia qudean por procesar
 			zk.delete(pathResult, -1); // se elimina el nodo /comm/member-xx/resutl			
 			if (processedSegments < numFragmentos) {
+				member = nodeComm + "/" + member;
 				LOGGER.info("[+] Se asigna un nuevo segmento al miembro:" + member);
 				assignSegment(member);
 			}
@@ -257,19 +260,22 @@ public class FASTAMapReduce implements Watcher {
 	 */
 	private ArrayList<Long> processResult(Resultado resultado) {
 		// TODO: Process a result
-		for (Long pos : resultado.getLista()) {
-			Resultat_Final.add(pos + resultado.getIndice()); // se añaden las posiciones del subgenoma al resultado final
+		try {
+			for (Long pos : resultado.getLista()) {
+				Resultat_Final.add(pos + resultado.getIndice()); // se añaden las posiciones del subgenoma al resultado final
+			}
+			LOGGER.info("[+] Se ha procesado el resultado parcial: " + resultado.getIndice() + " " + resultado.getLista());
+	
+			// Devuelve null si no se han recibido todos los resultados
+			if (processedSegments == numFragmentos) {
+				LOGGER.info("[+] RESULTADO FINAL!!!: " + Resultat_Final);
+				return Resultat_Final; // cuando se hayan procesado todos los segmentos, devolvemos el resultado final
+			}
+		} catch (Exception e) {
+			LOGGER.severe("Error al procesar los resultados: " + e.getMessage());
 		}
-		LOGGER.info("[+] Se ha procesado el resultado parcial: " + resultado.getIndice() + " " + resultado.getLista());
-
-		// Devuelve null si no se han recibido todos los resultados
-		if (processedSegments == numFragmentos) {
-			LOGGER.info("[+] RESULTADO FINAL!!!: " + Resultat_Final);
-			return Resultat_Final; // cuando se hayan procesado todos los segmentos, devolvemos el resultado final
-		} else {
-			LOGGER.info("[+] Se ha actualizado la lista de resultados: " + Resultat_Final);
-			return null; // hasta entonces, devolvemos null
-		}
+		LOGGER.info("[+] Se ha actualizado la lista de resultados: " + Resultat_Final);
+		return null; // hasta entonces, devolvemos null		
 	}
 
 	// Se recibe una notificación cuando cambia el número de hijos de /member
@@ -330,6 +336,7 @@ public class FASTAMapReduce implements Watcher {
 	// Generate a segment and assigned it to a process
 	private void assignSegment(String member) {
 		// TODO: create a segment and assing it to a process
+		LOGGER.info("[+] Asignadno segmento a:" + member);
 		// SE ASIGNA UNA CLASE BUSQUED AL NODO /comm/member-xx/segment que contiene el subgenoma, el indice y el patorn.
 		try {
 			String pathSegment = member + "/segment"; // el nuevo path es /comm/member-xx/segment
