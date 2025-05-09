@@ -1,22 +1,21 @@
 package es.upm.dit.cnvr_fcon.FASTAMapReduce;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-
-import java.io.IOException;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.CreateMode;
@@ -31,8 +30,6 @@ import es.upm.dit.cnvr_fcon.FASTA_aux.Busqueda;
 import es.upm.dit.cnvr_fcon.FASTA_aux.BytesLeidos;
 import es.upm.dit.cnvr_fcon.FASTA_aux.FASTALeerFichero;
 import es.upm.dit.cnvr_fcon.FASTA_aux.Resultado;
-import es.upm.dit.cnvr_fcon.FASTA_interface.BusquedaInterface;
-import es.upm.dit.cnvr_fcon.FASTA_interface.ResultadoInterface;
 /**
  * @author mmiguel, aalonso
  * @since 2023-11-20
@@ -222,13 +219,11 @@ public class FASTAMapReduce implements Watcher {
 		try {
 			// obtenemos el reusltado serializado dell nodo /comm/member-xx/result y lo deserializamos
 			Stat s = zk.exists(pathResult, false);
-			LOGGER.info("Obteniendo reusltado...");
 			byte[] data = zk.getData(pathResult, false, s); // obtenemos los datos del resultado
-			LOGGER.info("Resultado serializado obtenido");
 			ByteArrayInputStream in = new ByteArrayInputStream(data);
 			ObjectInputStream is = new ObjectInputStream(in);
 			Resultado result = (Resultado)is.readObject();
-			LOGGER.info("Resultado deserializado obtenido: "+ result.getIndice());
+			LOGGER.info("[+] Resultado obtenido: "+ result.getIndice());
 			
 			processedSegments++; // incrementamos el número de segmentos procesados
 			processResult(result); // procesamos el resultado parcial para obtener el reusltado final.
@@ -263,14 +258,16 @@ public class FASTAMapReduce implements Watcher {
 	private ArrayList<Long> processResult(Resultado resultado) {
 		// TODO: Process a result
 		for (Long pos : resultado.getLista()) {
-			Resultat_Final.add(pos + resultado.getIndice());
+			Resultat_Final.add(pos + resultado.getIndice()); // se añaden las posiciones del subgenoma al resultado final
 		}
+		LOGGER.info("[+] Se ha procesado el resultado parcial: " + resultado.getIndice() + " " + resultado.getLista());
+
 		// Devuelve null si no se han recibido todos los resultados
-		if (processedSegments < numFragmentos) {
-			LOGGER.info("[+] Se ha obtenido el resultado final: " + Resultat_Final);
+		if (processedSegments == numFragmentos) {
+			LOGGER.info("[+] RESULTADO FINAL!!!: " + Resultat_Final);
 			return Resultat_Final; // cuando se hayan procesado todos los segmentos, devolvemos el resultado final
 		} else {
-			LOGGER.info("[+] Se ja añadido un nuevo resultado aprcial a la lista:" + resultado.getIndice());
+			LOGGER.info("[+] Se ha actualizado la lista de resultados: " + Resultat_Final);
 			return null; // hasta entonces, devolvemos null
 		}
 	}
