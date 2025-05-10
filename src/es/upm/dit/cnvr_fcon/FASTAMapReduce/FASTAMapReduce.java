@@ -284,9 +284,9 @@ public class FASTAMapReduce implements Watcher {
 			// eliminamos el nodo result y asignamos un nuevo segmento si todavia qudean por procesar
 			zk.delete(pathResult, -1); // se elimina el nodo /comm/member-xx/resutl			
 			if (processedSegments < numFragmentos) {
-				member = nodeComm + "/" + member;
-				LOGGER.info("[+] Se asigna un nuevo segmento al miembro:" + member);
-				assignSegment(member);
+				String memberpath = nodeComm + "/" + member;
+				LOGGER.info("[+] Se asigna un nuevo segmento al miembro:" + memberpath);
+				assignSegment(memberpath);
 			}
 			
 		} catch (KeeperException | InterruptedException e) {
@@ -436,7 +436,7 @@ public class FASTAMapReduce implements Watcher {
 				} else{ // si hay nodos hijos, comprobamos si es un resultado o un segmento
 					for (String child : children) {
 						if (child.equals("result")) {
-							LOGGER.info("[+] Iniciando procesado del resultado de..."+ memberID);
+							LOGGER.info("[+] Iniciando procesado del resultado de..." + memberID);
 							getResult(pathResult, memberID); // cuando el hijo creado es un /result hay que procesar el resultado.													
 						}
 					}
