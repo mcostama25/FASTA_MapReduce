@@ -265,7 +265,6 @@ public class FASTAMapReduce implements Watcher {
 			Resultado result = (Resultado)is.readObject();
 			is.close();
 			LOGGER.info("[+] Resultado obtenido: "+ result.getIndice());
-<<<<<<< HEAD
 						
 			ArrayList<Long> Lista_Resultado_Final = processResult(result); // procesamos el resultado parcial para obtener el reusltado final.
 			 if (Lista_Resultado_Final != null) {
@@ -277,20 +276,6 @@ public class FASTAMapReduce implements Watcher {
 				 LOGGER.info("Todavia quedan segmentos a procesar.");
 			 }
 			return true;
-=======
-			
-			processedSegments++; // incrementamos el número de segmentos procesados
-			LOGGER.info("[+] Numero de segmentos procesados:" + processedSegments);
-			processResult(result); // procesamos el resultado parcial para obtener el reusltado final.
-			
-			// eliminamos el nodo result y asignamos un nuevo segmento si todavia qudean por procesar
-			zk.delete(pathResult, -1); // se elimina el nodo /comm/member-xx/resutl			
-			if (processedSegments < numFragmentos) {
-				String memberpath = nodeComm + "/" + member;
-				LOGGER.info("[+] Se asigna un nuevo segmento al miembro:" + memberpath);
-				assignSegment(memberpath);
-			}
->>>>>>> refs/remotes/origin/main
 			
 		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("[!] Error getting result: " + e.getMessage());
@@ -398,26 +383,12 @@ public class FASTAMapReduce implements Watcher {
 			String pathResult = CommMemberPath + nodeResult; // creamos el path del resultado
 			LOGGER.info("[+] Nuevo nodo en:" + CommMemberPath);
 			try {
-<<<<<<< HEAD
 				Thread.sleep(25);
 				Stat stat = zk.exists(pathResult, false); // comprobamos si existe en nodo /comm/memeber-xx/result
 				if(stat != null) {
 					getResult(pathResult, memberID);
 					if (segmentosAignados < numFragmentos) {
 						assignSegment(CommMemberPath);
-=======
-				// TODO: process for getting and handling segments
-				List<String> children = zk.getChildren(CommMemberPath, false);
-				if (children.isEmpty()) { // si no hay nodos hijos, asignamos segmento nuevo
-					LOGGER.info("[+] No hay nodos hijos en: " + CommMemberPath);
-					assignSegment(CommMemberPath); // asignamos un nuevo segmento al miembro
-				} else{ // si hay nodos hijos, comprobamos si es un resultado o un segmento
-					for (String child : children) {
-						if (child.equals("result")) {
-							LOGGER.info("[+] Iniciando procesado del resultado de..." + memberID);
-							getResult(pathResult, memberID); // cuando el hijo creado es un /result hay que procesar el resultado.													
-						}
->>>>>>> refs/remotes/origin/main
 					}
 				}
 				zk.getChildren(CommMemberPath, watcherCommMember); // volvemos a activar el Watcher.
