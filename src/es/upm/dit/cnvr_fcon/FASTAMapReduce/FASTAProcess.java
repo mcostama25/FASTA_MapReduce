@@ -29,6 +29,7 @@ import org.w3c.dom.events.Event;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import es.upm.dit.cnvr_fcon.ZK.CreateSession;
 import es.upm.dit.cnvr_fcon.FASTA_aux.Busqueda;
 import es.upm.dit.cnvr_fcon.FASTA_aux.FASTABuscar;
 import es.upm.dit.cnvr_fcon.FASTA_aux.Resultado;
@@ -45,7 +46,7 @@ public class FASTAProcess implements Watcher{
 	private String myId;
 	private String myName;
 	private String nodeComm     = "/comm";
-	private String nodeSegment  = "/segments";
+	private String nodeSegment  = "/segment";
 	private String nodeASegment = "/segment-";
 	private String nodeResult   = "/results";
 	// private String nodeAResult  = "/result-";
@@ -72,22 +73,8 @@ public class FASTAProcess implements Watcher{
 
 	private void create_ZK_Nodes(){
 		//Create Session to zk
-		Random rand = new Random();
-		int i = rand.nextInt(hosts.length);
-		
-		try {
-			if (zk == null) {
-				zk = new ZooKeeper(hosts[i], SESSION_TIMEOUT, this); // creamos una session de zookeeper conectando a uno de los hosts.
-				try {
-					lock.lock();
-					System.out.println("Cerrado el cerrojo para crear la sesión");
-				} catch (Exception e) {
-					LOGGER.severe("[!] Error al cerrar el cerrojo: " + e.getMessage());
-				} 
-			}
-		} catch (Exception e) {
-			LOGGER.severe("[!] Error creating session: " + e.getMessage());
-		}
+		CreateSession cs = new CreateSession();
+		zk = cs.ConnectSession(hosts);
 		
 		//TODO: Create the zkNodes required and set watchers
 		//Create node /members
@@ -106,7 +93,7 @@ public class FASTAProcess implements Watcher{
 
 				CommMemberPath = nodeComm + "/" + MemberID; // guardamos el path del nodo "/comm/member-xx"
 				zk.create(CommMemberPath, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT); // creamos el nodo "/comm/member-xx" usando el MemberID generado anteriormente.
-				LOGGER.info("[+] Created zNodes: " + nodeMember + " " + nodeComm);
+				LOGGER.info("[+] Se ha creado el nodo: " + CommMemberPath);
 				
 			}catch (KeeperException | InterruptedException e) {
 				LOGGER.severe("[!] Error creating zNodes: " + e.getMessage());
@@ -129,28 +116,19 @@ public class FASTAProcess implements Watcher{
 	private Watcher  watcherCommMember = new Watcher() { // este wacher se levanta al crearse el nodo /comm y va estar monitorizando la cracion y destruccion de hijos.
 		public void process(WatchedEvent event) {
 			System.out.println("------------------Watcher ComMember------------------\n");
+			String nodeMemberSegment = CommMemberPath + nodeSegment;
 			try {
-				// TODO: process for getting and handling segments
-				Event.EventType eventType = event.getType();
-				if (eventType == Event.EventType.NodeChildrenChanged) {
-					LOGGER.info("[+] :" + CommMemberPath);
-					try {
-						List<String> children = zk.getChildren(CommMemberPath, false);
-						if (children.get(0).equals("segment")) {
-					        processSegment(CommMemberPath);
-						} else {
-						    LOGGER.info("No hi ha cap fill a " + CommMemberPath);
-						}
-					}catch (KeeperException | InterruptedException e) {
-						LOGGER.severe("[!] Error geting /comm/member-x children: " + e.getMessage());
-					}	
-				} else if (event.getType() == Event.EventType.NodeDeleted) {
-					LOGGER.info("Nodo eliminado: " + CommMemberPath);
+				LOGGER.info("[+] Se han actualizado los hijos de:" + CommMemberPath);
+				Stat stat = zk.exists(nodeMemberSegment, false); // comprobamos si existe l nodo /comm/member-xx/segment
+				if (stat != null) {
+					processSegment(CommMemberPath);
 				}
-				zk.getChildren(CommMemberPath, watcherCommMember); // volvemos a activar el Watcher.
-			
-			} catch (Exception e) {
+			} catch (KeeperException e) {
 				LOGGER.severe("[!] Error processing node creation watcher: " + e.getMessage());
+			} catch (InterruptedException e) {
+				LOGGER.severe("InterruptedException en el watcher: " + e.getMessage());
+			} catch (Exception e) {
+				LOGGER.severe("Error inesperado en el watcher: " + e.getMessage());
 			}
 		}
 	};
@@ -179,45 +157,42 @@ public class FASTAProcess implements Watcher{
 	private boolean processSegment(String path) {
 		// Get a segment, search the pattern and create a result in the node /comm/member-xx/segment
 		String segmentPath = path + "/segment"; // el path era /comm/member-xx ahora le añadimos el nodo /segment.
+		String resultPath = path + "/result"; // construimos el path a partir de /comm/member-xx añadiendo el nodo /result
+		
 		try {
-			Stat s = zk.exists(segmentPath, false);
-			byte[] bytes = zk.getData(segmentPath, false, s);
-			
+			byte[] bytes = zk.getData(segmentPath, false, null);
+			zk.delete(segmentPath, -1); // se elimina el nodo /comm/member-xx/segment
 			LOGGER.info("[+] Se han obtenido los datos del segmento");
 			// desreializamos el objeto busqueda del nodo /comm/member-xx/segment para su procesado
 			ByteArrayInputStream in = new ByteArrayInputStream(bytes);
 			ObjectInputStream is = new ObjectInputStream(in);
 			Busqueda busqueda = (Busqueda) is.readObject();
-			
+			is.close();
 			// una vez reconstuido el objeto busqueda, usamos sus metodos para su procesado:
 			//recuperamos el indice
 			int segmentIndex = busqueda.getIndice();
 			LOGGER.info("[+] Segment: " + segmentIndex); // devolvemos por pantalla el indice del segmento.
 			// recuperamos el patron
 			byte[] patron = busqueda.getPatron();
-			LOGGER.info("[+] Patron: "+ patron);
 			// recuperamos el subgenoma
 			byte[] subGenoma = busqueda.getGenoma();
-			LOGGER.info("[+] Se ha obtenido el subGenoma: " + subGenoma);
 			
 			// con los elementos recuperados, llamamos al metodo buscar de FASTABuscar para encontrar los patrones dentor el subgenoma:
 			// construimos la clase FASTABuscar con busqueda.
 			FASTABuscar buscar = new FASTABuscar(busqueda); // se crea un objeto FASTABuscar
-			ArrayList<Long> rawresult = buscar.buscar(patron); // se llama al metodo buscar (devuelve el resultado con el ïndice del segmento y las posiciones)
+			ArrayList<Long> rawresult = buscar.buscar(busqueda.getPatron()); // se llama al metodo buscar (devuelve el resultado con el ïndice del segmento y las posiciones)
 			// construimos la clase Resultado qeu contiene la lista de posicione sy el indice del subGenoma
 			Resultado result = new Resultado(rawresult, segmentIndex);
 			//ahora serializamos el resultado para colgarlo en el nodo /comm/member-xx/result
 			ByteArrayOutputStream bos = new ByteArrayOutputStream();
 			ObjectOutputStream oos = new ObjectOutputStream(bos);
 			oos.writeObject(result);
-			oos.flush();
+			oos.close();
 			byte[] bResult = bos.toByteArray();
 			
 			//finalmente colgamos el objeto Result serializado al nodo /comm/member/result
-			zk.delete(segmentPath, -1); // se elimina el nodo /comm/member-xx/segment
-			String resultPath = path + "/result"; // construimos el path a partir de /comm/member-xx añadiendo el nodo /result
 			zk.create(resultPath, bResult, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT); // creamos el nodo path+/reuslt con los datos (byte[]) del resultado
-			LOGGER.info("[+] Resultado obtenido y colgado!: " + resultPath + ": " + result);
+			LOGGER.info("[+] Resultado obtenido y colgado: " + resultPath + ": " + result);
 			return true;
 			
 		} catch (KeeperException | InterruptedException e) {
