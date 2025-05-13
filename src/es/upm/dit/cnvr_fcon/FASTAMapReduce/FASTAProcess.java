@@ -119,7 +119,7 @@ public class FASTAProcess implements Watcher{
 			String nodeMemberSegment = CommMemberPath + nodeSegment;
 			try {
 				LOGGER.info("[+] Se han actualizado los hijos de:" + CommMemberPath);
-				Stat stat = zk.exists(nodeMemberSegment, false); // comprobamos si existe l nodo /comm/member-xx/segment
+				Stat stat = zk.exists(nodeMemberSegment, watcherCommMember); // comprobamos si existe l nodo /comm/member-xx/segment
 				if (stat != null) {
 					processSegment(CommMemberPath);
 				}

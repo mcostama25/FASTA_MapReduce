@@ -381,12 +381,13 @@ public class FASTAMapReduce implements Watcher {
 			String CommMemberPath = event.getPath(); // obtenemos el path del evento
 			String memberID = CommMemberPath.substring(CommMemberPath.lastIndexOf("/") + 1); //guardamos el nobre del miemrbo en cuestion
 			String pathResult = CommMemberPath + nodeResult; // creamos el path del resultado
-			LOGGER.info("[+] Nuevo nodo en:" + CommMemberPath);
+			LOGGER.info("[+] Nuevo nodo en:" + memberID);
 			try {
 				Thread.sleep(25);
 				Stat stat = zk.exists(pathResult, false); // comprobamos si existe en nodo /comm/memeber-xx/result
 				if(stat != null) {
 					getResult(pathResult, memberID);
+					zk.delete(pathResult, -1);
 					if (segmentosAignados < numFragmentos) {
 						assignSegment(CommMemberPath);
 					}
