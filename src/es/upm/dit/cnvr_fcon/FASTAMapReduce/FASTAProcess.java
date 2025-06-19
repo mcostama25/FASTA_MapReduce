@@ -81,7 +81,7 @@ public class FASTAProcess implements Watcher{
 		if (zk != null) {
 			try { 
 				if (zk.exists(nodeMember, false) == null) {
-                zk.create(nodeMember, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+					zk.create(nodeMember, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 	            }
 	            if (zk.exists(nodeComm, false) == null) {
 	                zk.create(nodeComm, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
@@ -116,10 +116,10 @@ public class FASTAProcess implements Watcher{
 	private Watcher  watcherCommMember = new Watcher() { // este wacher se levanta al crearse el nodo /comm y va estar monitorizando la cracion y destruccion de hijos.
 		public void process(WatchedEvent event) {
 			System.out.println("------------------Watcher ComMember------------------\n");
-			String nodeMemberSegment = CommMemberPath + nodeSegment;
+			String nodeMemberSegment = CommMemberPath + nodeSegment; // /comm/member-xx/segment
 			try {
 				LOGGER.info("[+] Se han actualizado los hijos de:" + CommMemberPath);
-				Stat stat = zk.exists(nodeMemberSegment, watcherCommMember); // comprobamos si existe l nodo /comm/member-xx/segment
+				Stat stat = zk.exists(nodeMemberSegment, watcherCommMember); // comprobamos si existe el nodo /comm/member-xx/segment
 				if (stat != null) {
 					processSegment(CommMemberPath);
 				}
@@ -162,23 +162,16 @@ public class FASTAProcess implements Watcher{
 		try {
 			byte[] bytes = zk.getData(segmentPath, false, null);
 			zk.delete(segmentPath, -1); // se elimina el nodo /comm/member-xx/segment
-			LOGGER.info("[+] Se han obtenido los datos del segmento");
 			// desreializamos el objeto busqueda del nodo /comm/member-xx/segment para su procesado
 			ByteArrayInputStream in = new ByteArrayInputStream(bytes);
 			ObjectInputStream is = new ObjectInputStream(in);
 			Busqueda busqueda = (Busqueda) is.readObject();
 			is.close();
+			
 			// una vez reconstuido el objeto busqueda, usamos sus metodos para su procesado:
 			//recuperamos el indice
 			int segmentIndex = busqueda.getIndice();
-			LOGGER.info("[+] Segment: " + segmentIndex); // devolvemos por pantalla el indice del segmento.
-			// recuperamos el patron
-			byte[] patron = busqueda.getPatron();
-			// recuperamos el subgenoma
-			byte[] subGenoma = busqueda.getGenoma();
-			
-			// con los elementos recuperados, llamamos al metodo buscar de FASTABuscar para encontrar los patrones dentor el subgenoma:
-			// construimos la clase FASTABuscar con busqueda.
+
 			FASTABuscar buscar = new FASTABuscar(busqueda); // se crea un objeto FASTABuscar
 			ArrayList<Long> rawresult = buscar.buscar(busqueda.getPatron()); // se llama al metodo buscar (devuelve el resultado con el ïndice del segmento y las posiciones)
 			// construimos la clase Resultado qeu contiene la lista de posicione sy el indice del subGenoma
@@ -219,11 +212,8 @@ public class FASTAProcess implements Watcher{
 	}
 
 	public static void main(String[] args) {
-		Logger.getLogger("org.apache.zookeeper").setLevel(Level.INFO);
-
 		FASTAProcess procesar = new FASTAProcess();
 		try {
-			// Thread.sleep(60000);
 			Thread.sleep(600000);
 		} catch (Exception e) {
 			LOGGER.severe("[!!] in main: " + e.getMessage());

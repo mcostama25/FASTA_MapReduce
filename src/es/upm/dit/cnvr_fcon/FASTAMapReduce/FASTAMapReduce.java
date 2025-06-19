@@ -2,7 +2,6 @@ package es.upm.dit.cnvr_fcon.FASTAMapReduce;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.util.HashMap;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -11,21 +10,13 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Random;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.apache.zookeeper.*;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.WatchedEvent;
-import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
-import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
-import org.w3c.dom.events.Event;
 
 import es.upm.dit.cnvr_fcon.ZK.CreateSession;
 import es.upm.dit.cnvr_fcon.FASTA_aux.Busqueda;
@@ -33,7 +24,7 @@ import es.upm.dit.cnvr_fcon.FASTA_aux.BytesLeidos;
 import es.upm.dit.cnvr_fcon.FASTA_aux.FASTALeerFichero;
 import es.upm.dit.cnvr_fcon.FASTA_aux.Resultado;
 /**
- * @author mmiguel, aalonso
+ * @author mmiguel, aalonso / Martí Costa
  * @since 2023-11-20
  */
 public class FASTAMapReduce implements Watcher {
@@ -48,25 +39,29 @@ public class FASTAMapReduce implements Watcher {
 	 * Número de fragmentos en el genoma (contenido). Será el número de hebras que
 	 * habrá que invocar para procesarlos, al usar el monitor
 	 */
+	
+	private List<String> members;
+	
 	private int numFragmentos = 100;
-	private int processedSegments = 0;
-	private int segmentosAignados = 0;
+	private int num_segmentosAsignados = 0;
+	private ArrayList<Integer> segmentos_asignados = new ArrayList<>();
+	private ArrayList<Integer> segmentos_acabados = new ArrayList<>();
+	
 	private byte[] patron = null;
 	private String fichero = null;
+	
 	private static String nodeMember = "/members";
 	private String nodeComm = "/comm";
 	private String nodeSegment = "/segment";
 	private String nodeResult = "/result";
-	private ZooKeeper zk = null;
-	private static final int SESSION_TIMEOUT = 5000;
-	private Lock lock = new ReentrantLock();
 	
-	private  ArrayList<Long> Resultat_Final = new ArrayList<>();
+	private ZooKeeper zk = null;
+	
+	private  ArrayList<Long> Resultat_Final = new ArrayList<>(); // variable para guardar el resultado final, lista con todas las posciones
 	
 	String[] hosts = { "127.0.0.1:2181", "127.0.0.1:2181", "127.0.0.1:2181" };
 	private String CommMemberPath = null; // definimos una variable donde guardaremos el path en el que se encuentra el
 											// nodo "/comm/member-xx"
-	private String memberID = null; // guardamos el ID del member "member-xx"
 
 	static {
 		System.setProperty("java.util.logging.SimpleFormatter.format", "[%1$tF %1$tT][%4$-7s] [%5$s] [%2$-7s] %n");
@@ -92,8 +87,8 @@ public class FASTAMapReduce implements Watcher {
 		this.patron = patron;
 		this.fichero = ficheroCromosoma;
 		
-		create_ZK_Nodes();
 		configurarLogger();
+		create_ZK_Nodes();
 		updateMembers(); // aqui se activa el watcher del nodo /members y se llama a la funcion
 							// assignSegment cuando se crea un nuevo miembro
 	}
@@ -149,8 +144,7 @@ public class FASTAMapReduce implements Watcher {
 
 	// configurarLogger
 	private void configurarLogger() {
-		ConsoleHandler handler;
-		handler = new ConsoleHandler();
+		ConsoleHandler handler = new ConsoleHandler();
 		handler.setLevel(Level.FINE);
 		LOGGER.addHandler(handler);
 		LOGGER.setLevel(Level.FINE);
@@ -163,7 +157,7 @@ public class FASTAMapReduce implements Watcher {
 	private void updateMembers() { // Activamos watchers
 		// TODO: to be created
 		try {
-			List<String> members = zk.getChildren(nodeMember, watcherMembers); // activamos el watcher de /members
+			members = zk.getChildren(nodeMember, watcherMembers); // activamos el watcher de /members
 			LOGGER.info("[+] Miembros registrados: "+ members);
 			
 			for (String member : members) {
@@ -176,6 +170,32 @@ public class FASTAMapReduce implements Watcher {
 		}
 	}
 
+	private void deleteall() { // función que elimine todos los nodos cuando se devualva el resultado final.
+		List<String> members; 
+		List<String> comm;
+		
+		try {
+			members = zk.getChildren(nodeMember, false);
+			comm = zk.getChildren(nodeMember, false);
+			
+			for (String child : members ) {
+				zk.delete(nodeMember+"/"+child, -1);
+			}
+			for (String child : comm) {
+				zk.delete(nodeComm+"/"+child, -1);
+			}
+			
+			zk.delete(nodeComm, -1);
+			zk.delete(nodeMember, -1);
+			
+		} catch (KeeperException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}	
+	}
 
 	//__________________________ PROCESAR GENOMA ________________________________
 
@@ -183,25 +203,27 @@ public class FASTAMapReduce implements Watcher {
 	// assignSegment
 	// Generate a segment and assigned it to a process
 	private void assignSegment(String member) { // String memmber == /comm/member-xx
-		// TODO: create a segment and assing it to a process
-		LOGGER.info("[+] Asignando segmento a: " + member);
 		// SE ASIGNA UNA CLASE BUSQUED AL NODO /comm/member-xx/segment que contiene el subgenoma, el indice y el patorn.
 		String pathSegment = member + "/segment"; // el nuevo path es /comm/member-xx/segment
+		Busqueda busqueda;
 		
 		byte[] subgenoma = null;
 		//Busqueda segment;
-
-		if ((segmentosAignados+1) <= numFragmentos) { // miramos si quedan segmentos para asignar
-			subgenoma = getGenome(segmentosAignados, patron);
-			//segment = new Busqueda(subgenoma, patron, segmentosAignados);
+		
+		LOGGER.info("[*] Segmento: "+num_segmentosAsignados+ " asignado");
+		segmentos_asignados.add(num_segmentosAsignados);
+		
+		if (numFragmentos > num_segmentosAsignados) { // miramos si quedan segmentos para asignar
+			subgenoma = getGenome(num_segmentosAsignados, patron);
+			busqueda = new Busqueda(subgenoma, patron, num_segmentosAsignados);
 		} else {
 			LOGGER.info("No hay más segmentos disponibles para asignar.");
 			return ;
 		}
+		
 		try {
-			Thread.sleep(50);
+			Thread.sleep(25);
 			// ahora se construye la classe BUSQUEDA:
-			Busqueda busqueda = new Busqueda(subgenoma, patron, segmentosAignados);
 			ByteArrayOutputStream bos = new ByteArrayOutputStream();
 			ObjectOutputStream oos = new ObjectOutputStream(bos);
 			oos.writeObject(busqueda);
@@ -210,9 +232,12 @@ public class FASTAMapReduce implements Watcher {
 			
 			// se crea el nodo /com/member-xx/segment con los datos de la clase busqyeda en formato ByteArray
 			zk.create(pathSegment, data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT); // con esto se le asigna el segmento del
-			segmentosAignados += 1;															// genoma creado al miembro correposndiente.
-			LOGGER.info("[+] Segmento asignado a: " + member);
-			LOGGER.info("[+] Numero de segmentos asignados: " + segmentosAignados);
+																		// genoma creado al miembro correposndiente.
+			
+			LOGGER.info("[+] Numero de segmentos asignados: " + segmentos_asignados.size());
+			LOGGER.info("[*]" + segmentos_asignados);
+			
+			num_segmentosAsignados ++;
 		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("[!] Error assigning segment: " + e.getMessage());
 		} catch (IOException e) {
@@ -265,17 +290,22 @@ public class FASTAMapReduce implements Watcher {
 			ObjectInputStream is = new ObjectInputStream(in);
 			Resultado result = (Resultado)is.readObject();
 			is.close();
+			
+			zk.delete(pathResult, -1);
 						
 			ArrayList<Long> Lista_Resultado_Final = processResult(result); // procesamos el resultado parcial para obtener el reusltado final.
-			 if (Lista_Resultado_Final != null) {
-				 LOGGER.info("[+][!][+] Se ha obtenido el reusltado final: \n");
-				 for (Long pos : Lista_Resultado_Final){
-						System.out.println("Patron encontrado en la posición: " + pos);
-					}
-				 System.exit(0);
-			 } else {
-				 LOGGER.info("[+] Todavia quedan segmentos a procesar.");
-			 }
+			if (Lista_Resultado_Final != null) {
+				LOGGER.info("[+][!][+] Se ha obtenido el reusltado final: \n");
+				for (Long pos : Lista_Resultado_Final){
+					System.out.println("Patron encontrado en la posición: " + pos);
+				}
+				
+				deleteall();
+				System.exit(0);
+				
+			} else {
+				LOGGER.info("[+] Todavia quedan segmentos a procesar.");
+			}
 			return true;
 			
 		} catch (KeeperException | InterruptedException e) {
@@ -299,31 +329,33 @@ public class FASTAMapReduce implements Watcher {
 	private ArrayList<Long> processResult(Resultado resultado) {
 		// TODO: Process a result
 		int tamanoSubGenoma = (rb.getGenoma().length / numFragmentos); // el tamaño de cada fragmento es igual al tamaño
-		// total de l Genoma / numFragmentos
 		int indice = resultado.getIndice();
 		ArrayList<Long> lista = resultado.getLista(); // posiciones del resultado parcial
+		
 		try {
-			if (lista != null) {
+			if (lista != null) { // si la lista del reusltado del segmento no esta vacia, la procesamos.
 				for (long pos : lista) {
 					long posicion = (indice * tamanoSubGenoma) + pos; // calculamos la posicion dentro del genoma total como: indice_subgenoma*Tamaño_subgenoma + posicion dentor de subgenoma 
-					Resultat_Final.add(posicion); // resultado.getIndice(), resultado.getLista()); // añadimos a la lista final el reusltado parcial
+					Resultat_Final.add(posicion); // añadimos a la lista final el reusltado parcial (las posiciones reales)
 				}
-			}	
-			LOGGER.info("[+] Se ha procesado el resultado parcial: " + indice + ": " + lista);
-			processedSegments += 1;
-			LOGGER.info("[+] Número de segmentos procesados:" + processedSegments);
-			// Devuelve null si no se han recibido todos los resultados
-			if (processedSegments == numFragmentos) {
+			}
+			
+			segmentos_acabados.add(indice); // añadimos el indice del segmento a la lista de control
+			LOGGER.info("[+] Número de segmentos procesados:" + segmentos_acabados.size());
+			
+			if (segmentos_acabados.size() == numFragmentos) {
 				System.out.println("[+] RESULTADO FINAL!!!: " + Resultat_Final);
 				return Resultat_Final; // cuando se hayan procesado todos los segmentos, devolvemos el resultado final
 			}
+			
 		} catch (Exception e) {
 			LOGGER.severe("Error al procesar los resultados: " + e.getMessage());
 		}
 		LOGGER.info("[+] Se ha actualizado la lista de resultados: " + Resultat_Final);
-		return null; // hasta entonces, devolvemos null		
+		return null; // Devuelve null si no se han recibido todos los resultados		
 	}
 
+	
 	
 	//__________________________ WATHCERS________________________________
 
@@ -384,12 +416,12 @@ public class FASTAMapReduce implements Watcher {
 			String pathResult = CommMemberPath + nodeResult; // creamos el path del resultado
 			LOGGER.info("[+] Nuevo nodo en:" + memberID);
 			try {
-				Thread.sleep(50);
+				Thread.sleep(25);
 				Stat stat = zk.exists(pathResult, false); // comprobamos si existe en nodo /comm/memeber-xx/result
 				if(stat != null) {
 					getResult(pathResult, memberID);
-					zk.delete(pathResult, -1);
-					if (segmentosAignados < numFragmentos) {
+					
+					if (num_segmentosAsignados < numFragmentos) {
 						assignSegment(CommMemberPath);
 					}
 				}
@@ -412,9 +444,9 @@ public class FASTAMapReduce implements Watcher {
 			fichero = args[0];
 			patronS = args[1];
 		} else {
-			System.out.println("[+] Utilizando fichero ref100K.fa y patron TGAAGCTA.");
 			fichero = "cromosomas/ref100K.fa";
 			patronS = "TGAAGCTA";
+			System.out.println("[+] Utilizando fichero " + fichero + "y patron " + patronS);
 		}
 		
 		byte[] patron = patronS.getBytes();
