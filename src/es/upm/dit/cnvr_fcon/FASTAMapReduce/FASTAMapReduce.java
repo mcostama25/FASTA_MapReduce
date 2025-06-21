@@ -8,8 +8,10 @@ import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -42,10 +44,13 @@ public class FASTAMapReduce implements Watcher {
 	
 	private List<String> members;
 	
-	private int numFragmentos = 100;
-	private int num_segmentosAsignados = 0;
-	private ArrayList<Integer> segmentos_asignados = new ArrayList<>();
-	private ArrayList<Integer> segmentos_acabados = new ArrayList<>();
+	private int numFragmentos = 100; // numero total de fragmentos dl genoma
+	private int segment_index = 0; // indice del segmento a asignar
+	private ArrayList<Integer> segmentos_asignados = new ArrayList<>(); // lista con los indices de los segmentos asignados
+	private ArrayList<Integer> segmentos_acabados = new ArrayList<>();  // lista de segmentos procesados y resultados parciales obtenidos 
+	private ArrayList<Integer> segmentos_fallidos = new ArrayList<>();  // lista con los indices de los segmentos asignados a procesos fallidos
+	
+	private Map<String, Integer> procesos_segmentos = new HashMap<>();  // diccionario de procesos y último indice de segmento asignado.
 	
 	private byte[] patron = null;
 	private String fichero = null;
@@ -157,37 +162,37 @@ public class FASTAMapReduce implements Watcher {
 	private void updateMembers() { // Activamos watchers
 		// TODO: to be created
 		try {
-			members = zk.getChildren(nodeMember, watcherMembers); // activamos el watcher de /members
+			members = zk.getChildren(nodeMember, false); // guardamos en una lista los miembros actuales
 			LOGGER.info("[+] Miembros registrados: "+ members);
 			
 			for (String member : members) {
 				CommMemberPath = nodeComm + "/" + member; // creamos la variable commemberPath
-				zk.getChildren(CommMemberPath, watcherCommMember); // activamos el watcher de /comm/member-xx para todos los miembros previamente creados
 				assignSegment(CommMemberPath); // asignamos un segmento a los miembros previamentre existentes.
+				zk.getChildren(CommMemberPath, watcherCommMember); // activamos el watcher de /comm/member-xx para todos los miembros previamente creados
 			}
+			zk.getChildren(nodeMember, watcherMembers); // activamos el watcher de /members otra vez.
 		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("[!] Error updating members: " + e.getMessage());
 		}
+		;
 	}
 
-	private void deleteall() { // función que elimine todos los nodos cuando se devualva el resultado final.
-		List<String> members; 
-		List<String> comm;
+	private void deleteall(String path) { // función que elimine todos los nodos cuando se devualva el resultado final.
 		
 		try {
-			members = zk.getChildren(nodeMember, false);
-			comm = zk.getChildren(nodeMember, false);
+			List<String> children = zk.getChildren(path, false);
 			
-			for (String child : members ) {
-				zk.delete(nodeMember+"/"+child, -1);
+			for (String child : children ) {
+				List<String> grandsons = (zk.getChildren(path + "/" + child, false));
+				if (grandsons != null) {
+					for (String grandson : grandsons) {
+						zk.delete(path + "/" + child + "/" + grandson, -1);
+					}
+				}
+				zk.delete(path+"/"+child, -1);
 			}
-			for (String child : comm) {
-				zk.delete(nodeComm+"/"+child, -1);
-			}
 			
-			zk.delete(nodeComm, -1);
-			zk.delete(nodeMember, -1);
-			
+			zk.delete(path, -1);
 		} catch (KeeperException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -210,19 +215,25 @@ public class FASTAMapReduce implements Watcher {
 		byte[] subgenoma = null;
 		//Busqueda segment;
 		
-		LOGGER.info("[*] Segmento: "+num_segmentosAsignados+ " asignado");
-		segmentos_asignados.add(num_segmentosAsignados);
-		
-		if (numFragmentos > num_segmentosAsignados) { // miramos si quedan segmentos para asignar
-			subgenoma = getGenome(num_segmentosAsignados, patron);
-			busqueda = new Busqueda(subgenoma, patron, num_segmentosAsignados);
+		if (segmentos_fallidos.size() != 0) { // reasignamos, si los hay, los segmentos de procesos fallidos.
+			int indice = segmentos_fallidos.get(0);
+			subgenoma = getGenome(indice, patron); // utilizamos el primero de los indices fallidos
+			busqueda = new Busqueda(subgenoma, patron, indice);
+			procesos_segmentos.put(member, indice); // guardamos en el diccionario el Id del mimebro y el indice deel segmento asignado
+		}
+		else if (numFragmentos > segmentos_asignados.size()) { // miramos si quedan segmentos para asignar
+			subgenoma = getGenome(segment_index, patron);
+			busqueda = new Busqueda(subgenoma, patron, segment_index);
+			segmentos_asignados.add(segment_index);
+			procesos_segmentos.put(member, segment_index); // guardamos en el diccionario el Id del mimebro y el indice deel segmento asignado
+			segment_index ++; // solo aumentamos el indice si se ha asignado un segmento nuevo.
 		} else {
 			LOGGER.info("No hay más segmentos disponibles para asignar.");
 			return ;
 		}
 		
 		try {
-			Thread.sleep(25);
+			//Thread.sleep(25);
 			// ahora se construye la classe BUSQUEDA:
 			ByteArrayOutputStream bos = new ByteArrayOutputStream();
 			ObjectOutputStream oos = new ObjectOutputStream(bos);
@@ -231,13 +242,11 @@ public class FASTAMapReduce implements Watcher {
 			byte[] data = bos.toByteArray();
 			
 			// se crea el nodo /com/member-xx/segment con los datos de la clase busqyeda en formato ByteArray
-			zk.create(pathSegment, data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT); // con esto se le asigna el segmento del
-																		// genoma creado al miembro correposndiente.
+			zk.create(pathSegment, data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT); // con esto se le asigna el segmento del														// genoma creado al miembro correposndiente.
 			
 			LOGGER.info("[+] Numero de segmentos asignados: " + segmentos_asignados.size());
-			LOGGER.info("[*]" + segmentos_asignados);
+			LOGGER.info("[+] Segmentos asignados: " + segmentos_asignados);
 			
-			num_segmentosAsignados ++;
 		} catch (KeeperException | InterruptedException e) {
 			LOGGER.severe("[!] Error assigning segment: " + e.getMessage());
 		} catch (IOException e) {
@@ -300,7 +309,8 @@ public class FASTAMapReduce implements Watcher {
 					System.out.println("Patron encontrado en la posición: " + pos);
 				}
 				
-				deleteall();
+				deleteall(nodeMember);
+				deleteall(nodeComm);
 				System.exit(0);
 				
 			} else {
@@ -341,11 +351,20 @@ public class FASTAMapReduce implements Watcher {
 			}
 			
 			segmentos_acabados.add(indice); // añadimos el indice del segmento a la lista de control
-			LOGGER.info("[+] Número de segmentos procesados:" + segmentos_acabados.size());
+			LOGGER.info("[+] Número de egmentos procesados:" + segmentos_acabados.size());
+			LOGGER.info("[+] Segmentos procesados:" + segmentos_acabados);
 			
 			if (segmentos_acabados.size() == numFragmentos) {
 				System.out.println("[+] RESULTADO FINAL!!!: " + Resultat_Final);
 				return Resultat_Final; // cuando se hayan procesado todos los segmentos, devolvemos el resultado final
+			} else if (segmentos_asignados.size() == numFragmentos) { // si no s ehan procesado todos, peor si se han asignado todos, reasignamos los que faltan.
+				for (Integer segmento : segmentos_asignados) {
+					if(!segmentos_acabados.contains(segmento)) {
+						segmentos_asignados.remove(segmento);
+						segmentos_fallidos.add(segmento);
+						LOGGER.info("[+] Se han asignado todos los segmentos, falt apor procesar: " + segmento);
+					}
+				}
 			}
 			
 		} catch (Exception e) {
@@ -367,34 +386,30 @@ public class FASTAMapReduce implements Watcher {
 			// TODO: get changes in the children of /member
 			System.out.println("------------------Watcher Member------------------\n");
 			try {
-				// TODO: process for getting and handling segments
-				Event.EventType eventType = event.getType();
-				if (eventType == Event.EventType.NodeChildrenChanged) {
-					try {
-						updateMembers(); // llamamos a la funcion updateMember spara tener un regiustro de los miembros y activar el watcher CommMember para el nuevo.
-						List<String> children = zk.getChildren(nodeMember, false);
-						Collections.sort(children);
-						if (!children.isEmpty()) {
-							String newSon = nodeComm + "/" + children.get(children.size() - 1);
-							assignSegment(newSon);
+				List<String> members_new = zk.getChildren(nodeMember, false);
+				for (String member : members) {
+					if (!members_new.contains(member)) { // comprobamos si hay algun miembro que haya sido eliminado 
+						List<String> childs = zk.getChildren(nodeComm + "/" + member, false); // miramos si tiene hijos el nodo fallido
+						if (childs.get(0) == "segment") { // si el miembro fallido tiene un segmento lo reasignamos
+							Integer segmentID = procesos_segmentos.get(member); // utilizamos el diccinario de miembros-segmentos asignados para obtener el Id del segmento asignado al proceso fallido.
+							segmentos_asignados.remove(segmentID); // eliminamos el ID del segmento de la lista de segmentos asignados
+							segmentos_fallidos.add(segmentID); // añadimos el ID del segmento a la lista de segmentos fallidos
+							
+						}else if (childs.get(0) == "result") { // si el miembro fallido tiene un resultado lo procesamos.
+							getResult(nodeComm + "/" + member + "/result", member); // obtenemos el resultado de /comm/member-xx/result
 						}
-					} catch (KeeperException | InterruptedException e) {
-						LOGGER.severe("[!] Error obteniendo hijos de /members: "+e.getMessage());
-						}
-				} else if (eventType == Event.EventType.NodeDeleted) {
-					LOGGER.info("Nodo eliminado: " + CommMemberPath);
-					updateMembers(); // llamamos a la funcion updateMember spara tener un registro de los miembros.
-					// TODO: cuando se eleimina un miembro (ha fallado) hay que eliminarlo del nodo
-					// /comm y recupera rel reusltado si lo hay
-					// POR HACER
-				} else {
-					LOGGER.info("____No se ha detectado al cración ni eliminación de Nodo MEMBERS______");
+						deleteall(nodeComm + "/" + member); // eliminamos todos los nodos que cuelgan del miembro fallido y este ioncluido de la rama Comm
+					}
 				}
-				zk.getChildren(nodeMember, watcherMembers); // volvemos a activar el Watcher.
-
-			} catch (Exception e) {
-				LOGGER.severe("[!] Error processing node creation watcher 1: " + e.getMessage());
+			} catch (KeeperException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
 			}
+			
+			updateMembers();
 		}
 	};
 
@@ -416,12 +431,12 @@ public class FASTAMapReduce implements Watcher {
 			String pathResult = CommMemberPath + nodeResult; // creamos el path del resultado
 			LOGGER.info("[+] Nuevo nodo en:" + memberID);
 			try {
-				Thread.sleep(25);
+				//Thread.sleep(25);
 				Stat stat = zk.exists(pathResult, false); // comprobamos si existe en nodo /comm/memeber-xx/result
 				if(stat != null) {
 					getResult(pathResult, memberID);
 					
-					if (num_segmentosAsignados < numFragmentos) {
+					if (segmentos_asignados.size() < numFragmentos) {
 						assignSegment(CommMemberPath);
 					}
 				}
@@ -446,21 +461,54 @@ public class FASTAMapReduce implements Watcher {
 		} else {
 			fichero = "cromosomas/ref100K.fa";
 			patronS = "TGAAGCTA";
-			System.out.println("[+] Utilizando fichero " + fichero + "y patron " + patronS);
+			System.out.println("[+] Utilizando fichero " + fichero + " y patron " + patronS);
 		}
 		
 		byte[] patron = patronS.getBytes();
 		int numFragmentos = 100;
 		FASTAMapReduce generar = new FASTAMapReduce(fichero, patron);
 		// generar.FASTAMap(patron);
-
+		generar.startResultChecker(2000); // comprobamos si hay resultados por procesar cada 2 segundos
 		// FASTAProcess procesar = new FASTAProcess();
 		try {
 			Thread.sleep(600000);
+			
 		} catch (Exception e) {
 			LOGGER.severe("Main thread interrupted: " + e.getMessage());
 		}
-
 	}
+	
+	private void startResultChecker(long intervalMillis) {
+	    Thread checkerThread = new Thread(() -> {
+	        while (true) {
+	            try {
+	            	Thread.sleep(25);
+	                List<String> members = zk.getChildren(nodeComm, false); // Llista de membres: member-xx
+	                for (String member : members) {
+	                    String memberPath = nodeComm + "/" + member;
+	                    String resultPath = memberPath + nodeResult;
+
+	                    Stat stat = zk.exists(resultPath, false);
+	                    if (stat != null) {
+	                        LOGGER.info("[!] Resultat trobat a: " + resultPath);
+	                        getResult(resultPath, member);
+	                        // Assignar nou segment si encara no s'han assignat tots
+	                        if (segmentos_asignados.size() < numFragmentos) {
+	                            assignSegment(memberPath);
+	                        }
+	                    }
+	                }
+	                Thread.sleep(intervalMillis);
+	            } catch (KeeperException | InterruptedException e) {
+	                LOGGER.severe("[!] Error al comprovar resultats: " + e.getMessage());
+	                break; // o continue, segons si vols reiniciar o aturar
+	            }
+	        }
+	    });
+
+	    checkerThread.setDaemon(true); // per no bloquejar l'aplicació si es tanca
+	    checkerThread.start();
+	}
+
 
 }
